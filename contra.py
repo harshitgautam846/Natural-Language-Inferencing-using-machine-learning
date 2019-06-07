@@ -13,15 +13,25 @@ from nltk.corpus import stopwords
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import seaborn as sns
 from collections import Counter
 from fuzzywuzzy import fuzz
 from nltk.util import ngrams
+
+from sklearn.utils import resample
+from sklearn.model_selection import train_test_split
+from sklearn import preprocessing
+from sklearn import metrics
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
 
 
 df = pd.read_csv('contradiction.txt', delimiter="\t", header=None, names=['num','sentence1','sentence2','rating','label'])
 df.drop(['num','rating'], axis=1,inplace=True)
 
-df['label'] = df['label'].apply(lambda label: 'CONTRADICTION' if label=='CONTRADICTION' else 'NOT CONTRADICTION')
+df['label'] = df['label'].apply(lambda label: 'contradiction' if label=='CONTRADICTION' else 'not contradiction')
 
 
 contraction = { 'isn\'t':'is not','aren\'t' : 'are not','wasn\'t':'was not','weren\'t':'were not',\
@@ -29,6 +39,15 @@ contraction = { 'isn\'t':'is not','aren\'t' : 'are not','wasn\'t':'was not','wer
                'wouldn\'t':'would not' ,'don\'t':'do not' ,'doesn\'t':'does not','didn\'t':'did not',\
                'can\'t':'can not','couldn\'t':'could not','shouldn\'t':'should not','mightn\'t':'might not',\
                'mustn\'t':'must not'}
+
+le = preprocessing.LabelEncoder()
+df['label'] = le.fit_transform(df['label'])
+
+df_majority = df[df['label'] == 1]
+df_minority = df[df['label'] == 0]
+df_minority_upsampled = resample(df_minority, replace=True, n_samples = 3500)
+df = pd.concat([df_majority, df_minority_upsampled])
+
 
 def exp(sent):
     new_sent=''
@@ -48,7 +67,6 @@ def prep(sentence):
     sentence = ' '.join(sentence)
     return sentence
 
-df['label'] = df['label'].apply(lambda x: prep(x))
 df['sentence1'] = df['sentence1'].apply(lambda x: prep(x))
 df['sentence2'] = df['sentence2'].apply(lambda x: prep(x))
 
@@ -102,7 +120,7 @@ def l2Distance(v1 ,v2):
     return math.sqrt(sum((v1[k] - v2[k])**2 for k in set(v1.keys()).intersection(set(v2.keys()))))
         
 def fuzzy(sent1 ,sent2):
-    return fuzz.ratio(sent1 , sent2)
+    return fuzz.ratio(sent1 , sent2)/100
 
 def speechCount(sent):
     tokens = nltk.word_tokenize(sent)
@@ -173,6 +191,60 @@ df['jacc_gram_3'] = df.apply(lambda x: jaccard_distance(genNgrams(x['sentence1']
 
 X = df.iloc[:,3:]
 
+min_max = MinMaxScaler()
+min_max.fit(X)
+X = min_max.transform(X)
+
+x_train,x_test,y_train,y_test = train_test_split(X,df['label'],test_size = 0.4,random_state=1)
+
+model = LogisticRegression()
+model.fit(x_train,y_train)
+y_pred = model.predict(x_test)
+print("Accuracy:",metrics.accuracy_score(y_test, y_pred))
+print("Precision:",metrics.precision_score(y_test, y_pred))
+print("Recall:",metrics.recall_score(y_test, y_pred))
+print("F1 score:",metrics.f1_score(y_test, y_pred))
+
+model = DecisionTreeClassifier(max_depth=5)
+model.fit(x_train,y_train)
+y_pred = model.predict(x_test)
+print("Accuracy:",metrics.accuracy_score(y_test, y_pred))
+print("Precision:",metrics.precision_score(y_test, y_pred))
+print("Recall:",metrics.recall_score(y_test, y_pred))
+print("F1 score:",metrics.f1_score(y_test, y_pred))
 
 
+rforest = RandomForestClassifier(n_estimators=100)
+rforest.fit(x_train,y_train)
+y_pred = rforest.predict(x_test)
+print("Accuracy:",metrics.accuracy_score(y_test, y_pred))
+feature_importances = pd.DataFrame(rforest.feature_importances_,index = x_train.columns,columns=['importance']).sort_values('importance',ascending=False)
+print("Accuracy:",metrics.accuracy_score(y_test, y_pred))
+print("Precision:",metrics.precision_score(y_test, y_pred))
+print("Recall:",metrics.recall_score(y_test, y_pred))
+print("F1 score:",metrics.f1_score(y_test, y_pred))
+
+sent1 ='i am a boy'
+sent2 ='i am not a boy'
+
+f =[]
+f.append(jaccard_similarity(sent1,sent2))
+f.append(edit(sent1,sent2))
+f.append(get_cosine(text_to_vector(sent1),text_to_vector(sent2)))
+f.append(lcs(sent1,sent2))
+f.append(l2Distance(text_to_vector(sent1),text_to_vector(sent2)))
+f.append(fuzzy(sent1,sent2))
+d1 =speechCount(sent1)
+d2 =speechCount(sent2)
+d3 =[ abs(d1[key] - d2.get(key, 0)) for key in d1.keys()]
+f.append(d3[0])
+f.append(d3[1])
+f.append(d3[2])
+f.append(cosine_ngrams(genNgrams(sent1,2) ,genNgrams(sent2,2)))
+f.append(cosine_ngrams(genNgrams(sent1,3) ,genNgrams(sent2,3)))
+f.append(jaccard_distance(genNgrams(sent1,2) ,genNgrams(sent2,2)))
+f.append(jaccard_distance(genNgrams(sent1,2) ,genNgrams(sent2,2)))
+f = np.asarray(f)
+f = f.reshape(1,-1)
+le.inverse_transform(model.predict(f))
 #contra['length'].plot.box(grid='True')
