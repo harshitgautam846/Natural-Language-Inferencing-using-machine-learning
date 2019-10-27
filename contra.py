@@ -1,11 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Created on Sun Jun  2 22:43:05 2019
-
-@author: jack
-"""
-
 import nltk
 import re
 import math
